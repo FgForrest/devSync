@@ -33,7 +33,7 @@ if [ "$SSH_SOURCE" = "" -o "$DEV_SOURCE" = "" -o "$SSH_TARGET" = "" -o "$DEV_TAR
 fi
 
 ## ssh / local commands
-SSH_OPTS="-c arcfour"
+SSH_OPTS="-C -c arcfour"
 if [ "$SSH_SOURCE" = "-" ]; then
     XS="bash -c"
 else
