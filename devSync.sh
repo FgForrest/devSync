@@ -16,14 +16,14 @@ SSH_TARGET="$3"
 DEV_TARGET="$4"
 
 SIZE_BLOCK="$5"
-if [ "$SIZE_BLOCK" = "" ]; then SIZE_BLOCK=32768; fi
+if [ "$SIZE_BLOCK" = "" ]; then SIZE_BLOCK=1048576; fi
 
 if [ "$SSH_SOURCE" = "" -o "$DEV_SOURCE" = "" -o "$SSH_TARGET" = "" -o "$DEV_TARGET" = "" ]; then
     echo "Usage: $0 [options] -|<user@source_host> <source_device> -|<user@target_host> <target_device> [block_size]"
     echo
     echo "Sync block devices. Allows local-local, local-remote, remote-local and remote-remote modes of operation."
     echo "Remote access uses SSH. Local mode is selected using - (dash) instead of <user@host> SSH connection parameters."
-    echo "Default blocksize is 32kB."
+    echo "Default blocksize is 1MB."
     echo
     echo "Options"
     echo "      -i  Interactive mode (default)"
@@ -76,7 +76,7 @@ fi
 ## commands
 C1_SUM="perl -'MDigest::MD5 md5' -ne 'BEGIN{\$/=\\$SIZE_BLOCK}; print md5(\$_)' '$DEV_TARGET'"
 C2_SEND="perl -'MDigest::MD5 md5' -ne 'BEGIN{\$/=\\$SIZE_BLOCK}; \$b=md5(\$_); read STDIN,\$a,$SIZE_HASH; if (\$a eq \$b) {print \"s\";} else {print \"c\".\$_;}' $DEV_SOURCE"
-C3_WRITE="perl -ne 'BEGIN{\$/=\\1}; if (\$_ eq \"s\") {\$s++;} else {if (\$s) {seek STDOUT,\$s*$SIZE_BLOCK,1; \$s=0;}; read ARGV,\$buf,$SIZE_BLOCK; print \$buf; \$w+=$SIZE_BLOCK; if (10+\$lw<time()) {\$lw=time(); print STDERR sprintf(\"\\nwritten %d bytes, %.6f %%\\n\",\$w,(\$w/$SIZE_SOURCE*100));};}' 1<>$DEV_TARGET"
+C3_WRITE="perl -MFcntl -ne 'BEGIN{\$/=\\1; STDOUT->autoflush(1); \$flags = fcntl(STDOUT, F_GETFL, 0); \$flags|=O_DSYNC; fcntl(STDOUT, F_SETFL, \$flags);}; if (\$_ eq \"s\") {\$s++;} else {if (\$s) {seek STDOUT,\$s*$SIZE_BLOCK,1; \$s=0;}; \$len = read STDIN,\$buf,$SIZE_BLOCK; die \"Invalid LEN\" if (\$len ne \"$SIZE_BLOCK\"); print \$buf; \$w+=$SIZE_BLOCK; if (10+\$lw<time()) {\$lw=time(); print STDERR sprintf(\"\\nwritten %d bytes, %.6f %%\\n\",\$w,(\$w/$SIZE_SOURCE*100));};}' 1<>$DEV_TARGET"
 
 if [ "$FLAG_INTERACTIVE" = "1" ]; then
     echo "C1 SUM:   $XT \"$C1_SUM\""
