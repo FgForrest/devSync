@@ -66,17 +66,30 @@ fi
 
 ## hash size + progress
 SIZE_HASH=16
-SIZE_PROGRESS=$(($SIZE_SOURCE / $SIZE_BLOCK * $SIZE_HASH))
-SIZE_CHECK=$(($SIZE_PROGRESS / $SIZE_HASH * $SIZE_BLOCK))
+SIZE_PROGRESS=$(($SIZE_SOURCE / $SIZE_BLOCK))
+SIZE_CHECK=$(($SIZE_PROGRESS * $SIZE_BLOCK))
 if [ "$SIZE_SOURCE" != "$SIZE_CHECK" ]; then
     echo "Invalid block size: $SIZE_BLOCK";
     exit 1;
 fi
 
 ## commands
-C1_SUM="perl -'MDigest::MD5 md5' -ne 'BEGIN{\$/=\\$SIZE_BLOCK}; print md5(\$_)' '$DEV_TARGET'"
-C2_SEND="perl -'MDigest::MD5 md5' -ne 'BEGIN{\$/=\\$SIZE_BLOCK}; \$b=md5(\$_); read STDIN,\$a,$SIZE_HASH; if (\$a eq \$b) {print \"s\";} else {print \"c\".\$_;}' $DEV_SOURCE"
-C3_WRITE="perl -MFcntl -ne 'BEGIN{\$/=\\1; STDOUT->autoflush(1); \$flags = fcntl(STDOUT, F_GETFL, 0); \$flags|=O_DSYNC; fcntl(STDOUT, F_SETFL, \$flags);}; if (\$_ eq \"s\") {\$s++;} else {if (\$s) {seek STDOUT,\$s*$SIZE_BLOCK,1; \$s=0;}; \$len = read STDIN,\$buf,$SIZE_BLOCK; die \"Invalid LEN\" if (\$len ne \"$SIZE_BLOCK\"); print \$buf; \$w+=$SIZE_BLOCK; if (10+\$lw<time()) {\$lw=time(); print STDERR sprintf(\"\\nwritten %d bytes, %.6f %%\\n\",\$w,(\$w/$SIZE_SOURCE*100));};}' 1<>$DEV_TARGET"
+C1_SUM="perl -'MDigest::MD5 md5' -ne 'BEGIN{\$/=\\$SIZE_BLOCK; STDOUT->autoflush(1);}; print md5(\$_)' '$DEV_TARGET'"
+C2_SEND="perl -'MDigest::MD5 md5' -ne 'BEGIN{\$/=\\$SIZE_BLOCK; STDOUT->autoflush(1);}; \$b=md5(\$_); read STDIN,\$a,$SIZE_HASH; if (\$a eq \$b) {print \"s\";} else {print \"c\".\$_;}' $DEV_SOURCE"
+C3_WRITE=""
+C3_WRITE="$C3_WRITE perl -MFcntl -ne '"
+C3_WRITE="$C3_WRITE BEGIN{\$/=\\1;"
+	C3_WRITE="$C3_WRITE STDOUT->autoflush(1);"
+	C3_WRITE="$C3_WRITE open (F, \"+<\", \"$DEV_TARGET\"); F->autoflush(1); \$flags = fcntl(F, F_GETFL, 0); \$flags|=O_DSYNC; fcntl(F, F_SETFL, \$flags);"
+C3_WRITE="$C3_WRITE };"
+C3_WRITE="$C3_WRITE END{close(F); print STDERR sprintf(\"\\nwritten total %d bytes, %.6f %%\\n\",\$w,(\$w/$SIZE_SOURCE*100)); };"
+C3_WRITE="$C3_WRITE print \".\"; if (\$_ eq \"s\") {\$s++;} else {if (\$s) {"
+	C3_WRITE="$C3_WRITE seek F,\$s*$SIZE_BLOCK,1; \$s=0;};"
+	C3_WRITE="$C3_WRITE \$len = read STDIN,\$buf,$SIZE_BLOCK; die \"Invalid LEN\" if (\$len ne \"$SIZE_BLOCK\");"
+	C3_WRITE="$C3_WRITE print F \$buf; \$w+=$SIZE_BLOCK;"
+	C3_WRITE="$C3_WRITE if (60+\$lw<time()) {\$lw=time(); print STDERR sprintf(\"\\nwritten %d bytes, %.6f %%\\n\",\$w,(\$w/$SIZE_SOURCE*100)); };"
+C3_WRITE="$C3_WRITE };"
+C3_WRITE="$C3_WRITE '"
 
 if [ "$FLAG_INTERACTIVE" = "1" ]; then
     echo "C1 SUM:   $XT \"$C1_SUM\""
@@ -88,9 +101,8 @@ if [ "$FLAG_INTERACTIVE" = "1" ]; then
 fi
 
 $XT "$C1_SUM" \
-    | pv -s "$SIZE_PROGRESS" \
     | $XS "$C2_SEND" \
-    | $XT "$C3_WRITE"
+    | $XT "$C3_WRITE" | pv -W -B 1 -s "$SIZE_PROGRESS" >/dev/null
 
 echo
 echo
